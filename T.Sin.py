@@ -1,5 +1,5 @@
 # Sin Kabir on the Fucking T.Sin Pro Ver...
-# T.Sin Pro — v1.0
+# T.Sin Pro — v1.0.2
 # Tel: @T_Sinn
 
 import time
