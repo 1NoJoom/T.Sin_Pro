@@ -2159,6 +2159,47 @@ def rank_working_datacenters(token):
     ranked.sort(key=lambda x: x[1])
     return ranked
 
+def _wg_handshake_age_sec():
+
+    try:
+        out = subprocess.check_output(
+            ["wg", "show", "wg0", "latest-handshakes"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return None
+    now = int(time.time())
+    best = None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        try:
+            ts = int(parts[1])
+        except ValueError:
+            continue
+        if ts <= 0:
+            continue
+        age = now - ts
+        if best is None or age < best:
+            best = age
+    return best
+
+
+def _tunnel_to_dc_ok():
+
+    try:
+        r = subprocess.run(
+            ["ping", "-c", "1", "-W", "2", "10.0.0.1"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
 def ensure_datacenter_connection(token, quiet=False):
 
     if not token:
@@ -2177,10 +2218,26 @@ def ensure_datacenter_connection(token, quiet=False):
             wg_up = subprocess.run(
                 "systemctl is-active --quiet wg-quick@wg0", shell=True
             ).returncode == 0
-            if wg_up:
+
+            hs_age = _wg_handshake_age_sec()
+            tunnel_ok = _tunnel_to_dc_ok()
+            handshake_fresh = hs_age is not None and hs_age < 180
+
+            if wg_up and tunnel_ok and handshake_fresh:
                 return True
+
             if not quiet:
-                print(f"  \033[93mWireGuard down — re-registering on {dc_display_name(current)}...\033[0m")
+                why = []
+                if not wg_up:
+                    why.append("service down")
+                elif not tunnel_ok:
+                    why.append("no route to 10.0.0.1")
+                elif not handshake_fresh:
+                    why.append(f"stale handshake ({hs_age}s)" if hs_age is not None else "no handshake")
+                print(
+                    f"  \033[93mTunnel broken ({', '.join(why) or 'unknown'}) — "
+                    f"re-registering on {dc_display_name(current)}...\033[0m"
+                )
             return bool(menu_install(token, prefer_dc=current, quiet=quiet))
 
     if not quiet:
