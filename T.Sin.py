@@ -2008,6 +2008,86 @@ def rewrite_wg_endpoint(config_text, endpoint_host):
     )
     return new_text if n else config_text
 
+def _resolve_host_ipv4(host):
+
+    import socket
+    try:
+        infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
+        if infos:
+            return infos[0][4][0]
+    except Exception:
+        pass
+    return None
+
+def _wg_live_endpoint_ip():
+
+    try:
+        out = subprocess.check_output(
+            ["wg", "show", "wg0", "endpoints"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        ep = parts[1].strip()
+        if ep in ("(none)", "none") or ep.startswith("["):
+            continue
+        return ep.rsplit(":", 1)[0]
+    return None
+
+def refresh_wg_endpoint_dns(force=False):
+
+    dc = get_active_dc()
+    if not dc or not os.path.exists(WG_CONF_PATH):
+        return False
+    try:
+        with open(WG_CONF_PATH, "r", encoding="utf-8") as f:
+            conf = f.read()
+    except Exception:
+        return False
+
+    m_ep = re.search(r"(?im)^\s*Endpoint\s*=\s*([^:\s]+):(\d+)\s*$", conf)
+    m_pk = re.search(r"(?im)^\s*PublicKey\s*=\s*(\S+)\s*$", conf)
+    if not m_ep or not m_pk:
+        return False
+
+    host = dc.strip()
+    port = m_ep.group(2).strip()
+    pubkey = m_pk.group(1).strip()
+
+
+    new_conf = rewrite_wg_endpoint(conf, host)
+    if new_conf != conf:
+        try:
+            with open(WG_CONF_PATH, "w", encoding="utf-8") as f:
+                f.write(new_conf)
+        except Exception:
+            pass
+
+    resolved = _resolve_host_ipv4(host)
+    live = _wg_live_endpoint_ip()
+    if not force and resolved and live and resolved == live:
+        return False
+
+
+    r = subprocess.run(
+        ["wg", "set", "wg0", "peer", pubkey, "endpoint", f"{host}:{port}"],
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode != 0:
+        _run("systemctl restart wg-quick@wg0", check=False)
+        return True
+
+    live2 = _wg_live_endpoint_ip()
+    if resolved and live2 and resolved != live2:
+        _run("systemctl restart wg-quick@wg0", check=False)
+    return True
+
 def ensure_wg_endpoint_uses_domain():
 
     dc = get_active_dc()
@@ -2023,19 +2103,21 @@ def ensure_wg_endpoint_uses_domain():
     if not m:
         return False
     current_host = m.group(1).strip()
-    if current_host.lower() == dc.lower():
-        return False
+    changed = False
+    if current_host.lower() != dc.lower():
+        new_conf = rewrite_wg_endpoint(conf, dc)
+        if new_conf != conf:
+            try:
+                with open(WG_CONF_PATH, "w", encoding="utf-8") as f:
+                    f.write(new_conf)
+                changed = True
+            except Exception:
+                return False
 
-    new_conf = rewrite_wg_endpoint(conf, dc)
-    if new_conf == conf:
-        return False
-    try:
-        with open(WG_CONF_PATH, "w", encoding="utf-8") as f:
-            f.write(new_conf)
-        _run("systemctl restart wg-quick@wg0", check=False)
-        return True
-    except Exception:
-        return False
+
+    if refresh_wg_endpoint_dns(force=changed):
+        changed = True
+    return changed
 
 def _ping_ms(host):
     ping_res = ping_host(host)
@@ -2088,7 +2170,10 @@ def ensure_datacenter_connection(token, quiet=False):
         if "error" not in st:
 
             if ensure_wg_endpoint_uses_domain() and not quiet:
-                print(f"  \033[92mWireGuard endpoint updated → {current}\033[0m")
+                live_ip = _wg_live_endpoint_ip() or "?"
+                dns_ip = _resolve_host_ipv4(current) or "?"
+                print(f"  \033[92mWG endpoint refreshed → {current} (DNS {dns_ip})\033[0m")
+                print(f"  \033[90mlive tunnel IP: {live_ip}\033[0m")
             wg_up = subprocess.run(
                 "systemctl is-active --quiet wg-quick@wg0", shell=True
             ).returncode == 0
