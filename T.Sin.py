@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0"
 
 try:
     from zoneinfo import ZoneInfo
@@ -971,7 +971,7 @@ _COUNTRY_META = {
     "serbia": ("🇷🇸", "RS"), "georgia": ("🇬🇪", "GE"), "armenia": ("🇦🇲", "AM"),
     "azerbaijan": ("🇦🇿", "AZ"), "kazakhstan": ("🇰🇿", "KZ"), "cyprus": ("🇨🇾", "CY"),
     "iceland": ("🇮🇸", "IS"), "malta": ("🇲🇹", "MT"), "moldova": ("🇲🇩", "MD"),
-    "belarus": ("🇧🇾", "BY"),
+    "belarus": ("🇧🇾", "BY"), "albania": ("🇦🇱", "AL"),
 }
 
 def _lookup_country_meta(name):
@@ -1996,6 +1996,12 @@ def dc_display_name(dc):
     except ValueError:
         return "Datacenter"
 
+def dc_compact_name(dc):
+    try:
+        return f"DataCenter{AVAILABLE_DATACENTERS.index(dc) + 1}"
+    except (ValueError, TypeError):
+        return "DataCenter"
+
 def get_active_dc():
     if os.path.exists(DC_FILE):
         with open(DC_FILE, "r") as f:
@@ -2915,8 +2921,9 @@ def menu_live_status(token):
                         dc_ping_color = "\033[91m"
                 except ValueError:
                     pass
-                    
-            frame += row("DataCenter Ping:", f"{dc_ping_color}{dc_ping}\033[0m", len(str(dc_ping)))
+
+            dc_label = f"{dc_compact_name(active_dc)} Ping:"
+            frame += row(dc_label, f"{dc_ping_color}{dc_ping}\033[0m", len(str(dc_ping)))
             
             active_proxies = data.get('active_proxies', {})
             if not active_proxies:
@@ -2924,25 +2931,43 @@ def menu_live_status(token):
                 frame += f"  {b}│{x} \033[91mNo Active Locations Found!{x}                       {b}│{x}\n"
                 frame += f"  {b}╰──────────────────────────────────────────────────╯{x}\n"
             else:
-                frame += f"  {b}├───────────────────┬────────┬────────┬────────────┤{x}\n"
-                frame += f"  {b}│{x} \033[1mLocation\033[0m          {b}│{x} \033[1mPort\033[0m   {b}│{x} \033[1mPing\033[0m   {b}│{x} \033[1mLatency\033[0m    {b}│{x}\n"
-                frame += f"  {b}├───────────────────┼────────┼────────┼────────────┤{x}\n"
-                for port, p_data in active_proxies.items():
-                    c_name_loc = p_data.get('country', 'Unknown')[:17]
+                def _c(text, width):
+                    body = str(text)[: width - 2]
+                    return f" {body:<{width - 2}} "
+
+                loc_count = len(active_proxies)
+                frame += f"  {b}├────┬───────────────┬────────┬────────┬───────────┤{x}\n"
+                frame += (
+                    f"  {b}│{x}\033[1m{_c('#', 4)}\033[0m"
+                    f"{b}│{x}\033[1m{_c('Location', 15)}\033[0m"
+                    f"{b}│{x}\033[1m{_c('Port', 8)}\033[0m"
+                    f"{b}│{x}\033[1m{_c('Ping', 8)}\033[0m"
+                    f"{b}│{x}\033[1m{_c('Latency', 11)}\033[0m{b}│{x}\n"
+                )
+                frame += f"  {b}├────┼───────────────┼────────┼────────┼───────────┤{x}\n"
+                sorted_proxies = sorted(
+                    active_proxies.items(),
+                    key=lambda kv: int(kv[0]) if str(kv[0]).isdigit() else str(kv[0]),
+                )
+                for idx, (port, p_data) in enumerate(sorted_proxies, 1):
+                    c_name_loc = (p_data.get('country', 'Unknown') or 'Unknown')
                     c_ping = str(p_data.get('ping_ms', '?')) + "ms"
                     try:
-                        dc_ping_val = float(dc_ping.replace('ms', ''))
+                        dc_ping_val = float(str(dc_ping).replace('ms', ''))
                         target_ping_val = float(str(p_data.get('ping_ms', '0')))
                         total_ping_str = f"{dc_ping_val + target_ping_val:.0f}ms"
                     except ValueError:
                         total_ping_str = "?"
-                        
-                    col1 = f" {c_name_loc:<17} "
-                    col2 = f" {port:<6} "
-                    col3 = f" {c_ping:<6} "
-                    col4 = f" {total_ping_str:<10} "
-                    frame += f"  {b}│{x}\033[96m{col1}\033[0m{b}│{x}\033[93m{col2}\033[0m{b}│{x}\033[92m{col3}\033[0m{b}│{x}\033[92m{col4}\033[0m{b}│{x}\n"
-                frame += f"  {b}╰───────────────────┴────────┴────────┴────────────╯{x}\n"
+
+                    frame += (
+                        f"  {b}│{x}\033[97m{_c(f'{idx:02d}', 4)}\033[0m"
+                        f"{b}│{x}\033[96m{_c(c_name_loc, 15)}\033[0m"
+                        f"{b}│{x}\033[93m{_c(port, 8)}\033[0m"
+                        f"{b}│{x}\033[92m{_c(c_ping, 8)}\033[0m"
+                        f"{b}│{x}\033[92m{_c(total_ping_str, 11)}\033[0m{b}│{x}\n"
+                    )
+                frame += f"  {b}╰────┴───────────────┴────────┴────────┴───────────╯{x}\n"
+                frame += f"  {t}Locations: {loc_count}{x}\n"
                 
             frame += f"\n  {t}Press [Enter] to return to main menu...{x}\n"
             frame += "\033[J" 
