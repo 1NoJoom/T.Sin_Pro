@@ -1973,6 +1973,7 @@ AVAILABLE_DATACENTERS = [
 ]
 TOKEN_FILE = "/etc/wireguard/.client_token"
 DC_FILE = "/etc/wireguard/.datacenter_domain"
+WG_CONF_PATH = "/etc/wireguard/wg0.conf"
 
 FAILOVER_INTERVAL_SEC = 60
 FAILOVER_SERVICE = "t-sin-failover.service"
@@ -1994,6 +1995,47 @@ def set_active_dc(domain):
     os.makedirs("/etc/wireguard", exist_ok=True)
     with open(DC_FILE, "w") as f:
         f.write(domain.strip())
+
+def rewrite_wg_endpoint(config_text, endpoint_host):
+
+    if not config_text or not endpoint_host:
+        return config_text
+    host = endpoint_host.strip()
+    new_text, n = re.subn(
+        r"(?im)^(\s*Endpoint\s*=\s*)([^:\s]+):(\d+)\s*$",
+        lambda m: f"{m.group(1)}{host}:{m.group(3)}",
+        config_text,
+    )
+    return new_text if n else config_text
+
+def ensure_wg_endpoint_uses_domain():
+
+    dc = get_active_dc()
+    if not dc or not os.path.exists(WG_CONF_PATH):
+        return False
+    try:
+        with open(WG_CONF_PATH, "r", encoding="utf-8") as f:
+            conf = f.read()
+    except Exception:
+        return False
+
+    m = re.search(r"(?im)^\s*Endpoint\s*=\s*([^:\s]+):(\d+)\s*$", conf)
+    if not m:
+        return False
+    current_host = m.group(1).strip()
+    if current_host.lower() == dc.lower():
+        return False
+
+    new_conf = rewrite_wg_endpoint(conf, dc)
+    if new_conf == conf:
+        return False
+    try:
+        with open(WG_CONF_PATH, "w", encoding="utf-8") as f:
+            f.write(new_conf)
+        _run("systemctl restart wg-quick@wg0", check=False)
+        return True
+    except Exception:
+        return False
 
 def _ping_ms(host):
     ping_res = ping_host(host)
@@ -2044,6 +2086,9 @@ def ensure_datacenter_connection(token, quiet=False):
     if current:
         st = api_request("/status", token, override_dc=current, timeout=6)
         if "error" not in st:
+
+            if ensure_wg_endpoint_uses_domain() and not quiet:
+                print(f"  \033[92mWireGuard endpoint updated → {current}\033[0m")
             wg_up = subprocess.run(
                 "systemctl is-active --quiet wg-quick@wg0", shell=True
             ).returncode == 0
@@ -2102,6 +2147,8 @@ def run_failover_daemon():
         try:
             token = get_saved_token()
             if token:
+
+                ensure_wg_endpoint_uses_domain()
                 ensure_datacenter_connection(token, quiet=True)
         except Exception:
             pass
@@ -2189,9 +2236,12 @@ def api_request(path, token, override_dc=None, timeout=12):
             return {"error": "API down (connection refused)"}
         return {"error": err}
 
-def setup_wireguard(config_text):
+def setup_wireguard(config_text, endpoint_host=None):
+
+    if endpoint_host:
+        config_text = rewrite_wg_endpoint(config_text, endpoint_host)
     os.makedirs("/etc/wireguard", exist_ok=True)
-    with open("/etc/wireguard/wg0.conf", "w") as f:
+    with open(WG_CONF_PATH, "w") as f:
         f.write(config_text)
     _run("systemctl enable wg-quick@wg0")
     if not _run("systemctl restart wg-quick@wg0"):
@@ -2325,7 +2375,8 @@ def menu_install(token=None, prefer_dc=None, quiet=False, preserve_token_on_fail
         
     set_active_dc(success_dc)
         
-    if setup_wireguard(data['wg_conf']):
+
+    if setup_wireguard(data['wg_conf'], endpoint_host=success_dc):
         save_token(token)
         if quiet:
             return True
