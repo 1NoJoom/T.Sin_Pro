@@ -5,6 +5,7 @@
 import time
 import os
 import sys
+import hashlib
 import requests
 import json
 import subprocess
@@ -1979,6 +1980,14 @@ FAILOVER_INTERVAL_SEC = 60
 FAILOVER_SERVICE = "t-sin-failover.service"
 FAILOVER_UNIT_PATH = f"/etc/systemd/system/{FAILOVER_SERVICE}"
 
+
+GITHUB_REPO_RAW = "https://raw.githubusercontent.com/1NoJoom/T.Sin_Pro/main"
+GITHUB_SCRIPT_URL = f"{GITHUB_REPO_RAW}/T.Sin.py"
+GITHUB_INSTALL_URL = f"{GITHUB_REPO_RAW}/install.sh"
+INSTALL_PATH = "/usr/local/bin/T.Sin"
+UPDATE_CHECK_INTERVAL_SEC = 3600
+UPDATE_STAMP_FILE = "/etc/wireguard/.t_sin_update_check"
+
 def dc_display_name(dc):
     try:
         return f"Datacenter {AVAILABLE_DATACENTERS.index(dc) + 1}"
@@ -2259,9 +2268,172 @@ def ensure_datacenter_connection(token, quiet=False):
             return True
     return False
 
+def _installed_script_path():
+    if os.path.isfile(INSTALL_PATH):
+        try:
+            with open(INSTALL_PATH, "rb") as f:
+                head = f.read(240)
+            first = head.split(b"\n", 1)[0].lower()
+            if b"python" in first:
+                return INSTALL_PATH
+            body = head.decode("utf-8", errors="ignore")
+            m = re.search(r"python3?\s+(\S+)", body)
+            if m and os.path.isfile(m.group(1).strip("\"'")):
+                return m.group(1).strip("\"'")
+        except Exception:
+            pass
+    return os.path.abspath(__file__)
+
+
+def _normalize_script_bytes(data: bytes) -> bytes:
+    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+    if text.startswith("#!"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+    return text.encode("utf-8")
+
+
+def _script_hash(data: bytes) -> str:
+    return hashlib.sha256(_normalize_script_bytes(data)).hexdigest()
+
+
+def _fetch_github_script(timeout=25) -> bytes | None:
+    url = f"{GITHUB_SCRIPT_URL}?v={int(time.time())}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "T.Sin-Pro-Updater"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+        if not data or len(data) < 500:
+            return None
+        text = data.decode("utf-8", errors="ignore")
+
+        markers = ("AVAILABLE_DATACENTERS", "ensure_datacenter_connection", "menu_update")
+        if not any(m in text for m in markers):
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _read_local_script_bytes() -> bytes | None:
+    path = _installed_script_path()
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except Exception:
+        return None
+
+
+def github_update_available() -> tuple[bool, bytes | None]:
+    remote = _fetch_github_script()
+    if not remote:
+        return False, None
+    local = _read_local_script_bytes()
+    if not local:
+        return True, remote
+    return _script_hash(local) != _script_hash(remote), remote
+
+
+def apply_github_update(remote_bytes: bytes, relaunch_interactive: bool = False) -> bool:
+    try:
+        raw = remote_bytes
+        text = raw.decode("utf-8", errors="replace")
+        if not text.lstrip().startswith("#!"):
+            raw = (b"#!/usr/bin/env python3\n" + _normalize_script_bytes(raw))
+        else:
+            raw = text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+
+        os.makedirs("/usr/local/bin", exist_ok=True)
+        tmp = INSTALL_PATH + ".new"
+        with open(tmp, "wb") as f:
+            f.write(raw)
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, INSTALL_PATH)
+
+
+        try:
+            unit = f"""[Unit]
+Description=T.Sin datacenter failover watcher
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 {INSTALL_PATH} --failover-daemon
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
+"""
+            with open(FAILOVER_UNIT_PATH, "w") as f:
+                f.write(unit)
+            subprocess.run(
+                ["systemctl", "daemon-reload"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            subprocess.run(
+                ["systemctl", "enable", FAILOVER_SERVICE],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
+
+        if relaunch_interactive:
+            if os.path.exists("/dev/tty"):
+                os.execvp("bash", ["bash", "-c", f'exec "{INSTALL_PATH}" </dev/tty >/dev/tty 2>/dev/tty'])
+            os.execvp(sys.executable, [sys.executable, INSTALL_PATH])
+
+        subprocess.Popen(
+            ["systemctl", "restart", FAILOVER_SERVICE],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _update_check_due() -> bool:
+    try:
+        if os.path.exists(UPDATE_STAMP_FILE):
+            age = time.time() - os.path.getmtime(UPDATE_STAMP_FILE)
+            if age < UPDATE_CHECK_INTERVAL_SEC:
+                return False
+    except Exception:
+        pass
+    return True
+
+
+def _touch_update_stamp():
+    try:
+        os.makedirs(os.path.dirname(UPDATE_STAMP_FILE), exist_ok=True)
+        with open(UPDATE_STAMP_FILE, "w") as f:
+            f.write(str(int(time.time())))
+    except Exception:
+        pass
+
+
+def maybe_auto_update_from_github(force: bool = False) -> bool:
+    if not force and not _update_check_due():
+        return False
+    _touch_update_stamp()
+    try:
+        needs, remote = github_update_available()
+        if not needs or not remote:
+            return False
+        ok = apply_github_update(remote, relaunch_interactive=False)
+        return ok
+    except Exception:
+        return False
+
+
 def install_failover_service():
 
-    script_path = os.path.abspath(__file__)
+    script_path = INSTALL_PATH if os.path.isfile(INSTALL_PATH) else os.path.abspath(__file__)
     unit = f"""[Unit]
 Description=T.Sin datacenter failover watcher
 After=network-online.target wg-quick@wg0.service
@@ -2287,9 +2459,9 @@ WantedBy=multi-user.target
 def run_failover_daemon():
     while True:
         try:
+            maybe_auto_update_from_github(force=False)
             token = get_saved_token()
             if token:
-
                 ensure_wg_endpoint_uses_domain()
                 ensure_datacenter_connection(token, quiet=True)
         except Exception:
@@ -2544,27 +2716,47 @@ def menu_update():
     print(f"\n  {b}╭──────────────────────────────────────────────────╮{x}")
     print(f"  {b}│{x}{' ' * 22}{t}Update{x}{' ' * 22}{b}│{x}")
     print(f"  {b}├──────────────────────────────────────────────────┤{x}")
-    print(f"  {b}│{x} {t}Download & install the latest T.Sin Pro from{x}     {b}│{x}")
-    print(f"  {b}│{x} {t}GitHub, then relaunch automatically.{x}             {b}│{x}")
+    print(f"  {b}│{x} {t}Check GitHub for a newer T.Sin Pro build,{x}         {b}│{x}")
+    print(f"  {b}│{x} {t}install only if it differs from this server.{x}     {b}│{x}")
     print(f"  {b}╰──────────────────────────────────────────────────╯{x}\n")
 
-    if not confirm_proceed("Update to the latest version now?"):
+    print(f"  {C_CYAN}[~] Checking GitHub for updates...{C_RESET}\n")
+    try:
+        needs, remote = github_update_available()
+    except Exception as e:
+        print(f"  {C_RED}❌ Could not check GitHub: {e}{C_RESET}")
+        input("\n  Press Enter to continue...")
+        return
+
+    if not remote:
+        print(f"  {C_RED}❌ Could not download / verify T.Sin.py from GitHub.{C_RESET}")
+        print(f"  {C_YELLOW}Check internet access or the repo URL.{C_RESET}")
+        input("\n  Press Enter to continue...")
+        return
+
+    if not needs:
+        print(f"  {C_GREEN}✓ Latest version is already installed.{C_RESET}")
+        print(f"  {C_WHITE}No update needed — your T.Sin matches GitHub main.{C_RESET}")
+        input("\n  Press Enter to continue...")
+        return
+
+    print(f"  {C_YELLOW}A newer version was found on GitHub.{C_RESET}")
+    if not confirm_proceed("Install the update and relaunch now?"):
         print(f"\n  {C_YELLOW}Cancelled.{C_RESET}")
         time.sleep(1.2)
         return
 
-    print(f"\n  {C_CYAN}[~] Fetching latest release from GitHub...{C_RESET}\n")
-
-    install_url = "https://raw.githubusercontent.com/1NoJoom/T.Sin_Pro/main/install.sh"
-    tmp_installer = "/tmp/t-sin-install.sh"
+    print(f"\n  {C_CYAN}[~] Installing update...{C_RESET}\n")
     try:
-        os.execvp("bash", ["bash", "-c",
-            f'curl -fsSL "{install_url}" -o "{tmp_installer}" '
-            f'&& bash "{tmp_installer}"'
-        ])
+        if apply_github_update(remote, relaunch_interactive=True):
+            return
     except Exception as e:
         print(f"\n  {C_RED}❌ Update failed: {e}{C_RESET}")
         input("\n  Press Enter to continue...")
+        return
+
+    print(f"\n  {C_RED}❌ Update failed while writing the new file.{C_RESET}")
+    input("\n  Press Enter to continue...")
 
 def menu_uninstall():
     print("\n  \033[91mAre you sure you want to logout from your token?\033[0m")
