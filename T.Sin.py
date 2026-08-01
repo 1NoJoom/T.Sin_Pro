@@ -1,11 +1,10 @@
 # Sin Kabir on the Fucking T.Sin Pro Ver...
-# T.Sin Pro v1.0.0
+# T.Sin Pro — v1.0
 # Tel: @T_Sinn
 
 import time
 import os
 import sys
-import hashlib
 import requests
 import json
 import subprocess
@@ -19,6 +18,9 @@ import threading
 import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
+
+
+APP_VERSION = "1.0"
 
 try:
     from zoneinfo import ZoneInfo
@@ -2292,8 +2294,42 @@ def _normalize_script_bytes(data: bytes) -> bytes:
     return text.encode("utf-8")
 
 
-def _script_hash(data: bytes) -> str:
-    return hashlib.sha256(_normalize_script_bytes(data)).hexdigest()
+def _parse_app_version(text: str) -> str | None:
+    if not text:
+        return None
+    m = re.search(r'(?m)^\s*APP_VERSION\s*=\s*[\'"]([^\'"]+)[\'"]', text)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r'(?im)\bVer:\s*([0-9]+(?:\.[0-9]+)*)', text)
+    if m:
+        return m.group(1).strip()
+    return None
+
+
+def _norm_ver(v: str) -> str:
+    parts = [p for p in re.split(r"[^\d]+", (v or "").strip()) if p.isdigit()]
+    while parts and parts[-1] == "0" and len(parts) > 1:
+        parts.pop()
+    return ".".join(parts) if parts else "0"
+
+
+def _fetch_remote_version(timeout=15) -> str | None:
+    url = f"{GITHUB_SCRIPT_URL}?v={int(time.time())}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "T.Sin-Pro-Updater"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            buf = b""
+            while len(buf) < 32768:
+                chunk = resp.read(2048)
+                if not chunk:
+                    break
+                buf += chunk
+                ver = _parse_app_version(buf.decode("utf-8", errors="ignore"))
+                if ver:
+                    return ver
+        return _parse_app_version(buf.decode("utf-8", errors="ignore"))
+    except Exception:
+        return None
 
 
 def _fetch_github_script(timeout=25) -> bytes | None:
@@ -2305,8 +2341,7 @@ def _fetch_github_script(timeout=25) -> bytes | None:
         if not data or len(data) < 500:
             return None
         text = data.decode("utf-8", errors="ignore")
-
-        markers = ("AVAILABLE_DATACENTERS", "ensure_datacenter_connection", "menu_update")
+        markers = ("AVAILABLE_DATACENTERS", "ensure_datacenter_connection", "APP_VERSION")
         if not any(m in text for m in markers):
             return None
         return data
@@ -2314,23 +2349,19 @@ def _fetch_github_script(timeout=25) -> bytes | None:
         return None
 
 
-def _read_local_script_bytes() -> bytes | None:
-    path = _installed_script_path()
-    try:
-        with open(path, "rb") as f:
-            return f.read()
-    except Exception:
-        return None
-
-
-def github_update_available() -> tuple[bool, bytes | None]:
+def check_github_version() -> tuple[str, bytes | None, str | None]:
+    remote_ver = _fetch_remote_version()
+    if not remote_ver:
+        return "error", None, None
+    if _norm_ver(remote_ver) == _norm_ver(APP_VERSION):
+        return "latest", None, remote_ver
     remote = _fetch_github_script()
     if not remote:
-        return False, None
-    local = _read_local_script_bytes()
-    if not local:
-        return True, remote
-    return _script_hash(local) != _script_hash(remote), remote
+        return "error", None, remote_ver
+    got = _parse_app_version(remote.decode("utf-8", errors="ignore"))
+    if not got or _norm_ver(got) == _norm_ver(APP_VERSION):
+        return "latest", None, got or remote_ver
+    return "available", remote, got
 
 
 def apply_github_update(remote_bytes: bytes, relaunch_interactive: bool = False) -> bool:
@@ -2422,11 +2453,10 @@ def maybe_auto_update_from_github(force: bool = False) -> bool:
         return False
     _touch_update_stamp()
     try:
-        needs, remote = github_update_available()
-        if not needs or not remote:
+        status, remote, _remote_ver = check_github_version()
+        if status != "available" or not remote:
             return False
-        ok = apply_github_update(remote, relaunch_interactive=False)
-        return ok
+        return apply_github_update(remote, relaunch_interactive=False)
     except Exception:
         return False
 
@@ -2716,37 +2746,38 @@ def menu_update():
     print(f"\n  {b}╭──────────────────────────────────────────────────╮{x}")
     print(f"  {b}│{x}{' ' * 22}{t}Update{x}{' ' * 22}{b}│{x}")
     print(f"  {b}├──────────────────────────────────────────────────┤{x}")
-    print(f"  {b}│{x} {t}Check GitHub for a newer T.Sin Pro build,{x}         {b}│{x}")
-    print(f"  {b}│{x} {t}install only if it differs from this server.{x}     {b}│{x}")
+    print(f"  {b}│{x} {t}Compare Ver with GitHub — update only if changed.{x} {b}│{x}")
     print(f"  {b}╰──────────────────────────────────────────────────╯{x}\n")
 
-    print(f"  {C_CYAN}[~] Checking GitHub for updates...{C_RESET}\n")
+    print(f"  {C_WHITE}Local Ver: {APP_VERSION}{C_RESET}")
+    print(f"  {C_CYAN}[~] Checking GitHub APP_VERSION...{C_RESET}\n")
     try:
-        needs, remote = github_update_available()
+        status, remote, remote_ver = check_github_version()
     except Exception as e:
         print(f"  {C_RED}❌ Could not check GitHub: {e}{C_RESET}")
         input("\n  Press Enter to continue...")
         return
 
-    if not remote:
-        print(f"  {C_RED}❌ Could not download / verify T.Sin.py from GitHub.{C_RESET}")
+    if status == "error":
+        print(f"  {C_RED}❌ Could not read version from GitHub.{C_RESET}")
         print(f"  {C_YELLOW}Check internet access or the repo URL.{C_RESET}")
         input("\n  Press Enter to continue...")
         return
 
-    if not needs:
+    if status == "latest":
+        shown = remote_ver or APP_VERSION
         print(f"  {C_GREEN}✓ Latest version is already installed.{C_RESET}")
-        print(f"  {C_WHITE}No update needed — your T.Sin matches GitHub main.{C_RESET}")
+        print(f"  {C_WHITE}Installed Ver: {APP_VERSION}  |  GitHub Ver: {shown}{C_RESET}")
         input("\n  Press Enter to continue...")
         return
 
-    print(f"  {C_YELLOW}A newer version was found on GitHub.{C_RESET}")
+    print(f"  {C_YELLOW}Update available: {APP_VERSION} → {remote_ver}{C_RESET}")
     if not confirm_proceed("Install the update and relaunch now?"):
         print(f"\n  {C_YELLOW}Cancelled.{C_RESET}")
         time.sleep(1.2)
         return
 
-    print(f"\n  {C_CYAN}[~] Installing update...{C_RESET}\n")
+    print(f"\n  {C_CYAN}[~] Installing Ver {remote_ver}...{C_RESET}\n")
     try:
         if apply_github_update(remote, relaunch_interactive=True):
             return
@@ -3169,7 +3200,7 @@ def main():
         left_1 = f" User: {c_name}"
         left_1 += " " * max(0, 24 - len(left_1))
         
-        right_1 = f" Ver: 1.0"
+        right_1 = f" Ver: {APP_VERSION}"
         right_1 += " " * max(0, 25 - len(right_1))
         
         if exp_str.endswith("Minutes"):
