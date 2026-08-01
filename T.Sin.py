@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.0"
+APP_VERSION = "1.0.1"
 
 try:
     from zoneinfo import ZoneInfo
