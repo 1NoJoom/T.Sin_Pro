@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.0"
+APP_VERSION = "1.0.1"
 
 try:
     from zoneinfo import ZoneInfo
@@ -2746,11 +2746,11 @@ def menu_update():
     print(f"\n  {b}╭──────────────────────────────────────────────────╮{x}")
     print(f"  {b}│{x}{' ' * 22}{t}Update{x}{' ' * 22}{b}│{x}")
     print(f"  {b}├──────────────────────────────────────────────────┤{x}")
-    print(f"  {b}│{x} {t}Compare Ver with GitHub — update only if changed.{x} {b}│{x}")
+    print(f"  {b}│{x} {t}Compare Ver with GitHub — update only if changed{x} {b}│{x}")
     print(f"  {b}╰──────────────────────────────────────────────────╯{x}\n")
 
     print(f"  {C_WHITE}Local Ver: {APP_VERSION}{C_RESET}")
-    print(f"  {C_CYAN}[~] Checking GitHub APP_VERSION...{C_RESET}\n")
+    print(f"  {C_CYAN}[~] Checking GitHub for new version...{C_RESET}\n")
     try:
         status, remote, remote_ver = check_github_version()
     except Exception as e:
