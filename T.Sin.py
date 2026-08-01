@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 try:
     from zoneinfo import ZoneInfo
@@ -2338,57 +2338,119 @@ def _fetch_remote_version(timeout=15) -> str | None:
         return None
 
 
-def _fetch_github_script(timeout=25) -> bytes | None:
+def _validate_script_text(text: str) -> bool:
+    if not text or len(text) < 500:
+        return False
+    markers = (
+        "AVAILABLE_DATACENTERS",
+        "ensure_datacenter_connection",
+        "APP_VERSION",
+        "menu_live_status",
+    )
+    return all(m in text for m in markers)
+
+
+def download_github_script(timeout=60) -> tuple[bytes | None, str | None]:
     url = f"{GITHUB_SCRIPT_URL}?v={int(time.time())}"
+    tmp = f"/tmp/T.Sin_download_{os.getpid()}.py"
+    data = None
+
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "T.Sin-Pro-Updater"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
-        if not data or len(data) < 500:
-            return None
-        text = data.decode("utf-8", errors="ignore")
-        markers = ("AVAILABLE_DATACENTERS", "ensure_datacenter_connection", "APP_VERSION")
-        if not any(m in text for m in markers):
-            return None
-        return data
+        r = subprocess.run(
+            ["curl", "-fsSL", url, "-o", tmp],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if r.returncode == 0 and os.path.isfile(tmp) and os.path.getsize(tmp) > 500:
+            with open(tmp, "rb") as f:
+                data = f.read()
     except Exception:
-        return None
+        data = None
+    finally:
+        try:
+            if os.path.isfile(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+
+    if not data:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "T.Sin-Pro-Updater"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = resp.read()
+        except Exception:
+            return None, None
+
+    if not data:
+        return None, None
+    text = data.decode("utf-8", errors="replace")
+    if not _validate_script_text(text):
+        return None, None
+    return data, _parse_app_version(text)
 
 
-def check_github_version() -> tuple[str, bytes | None, str | None]:
+def check_github_version() -> tuple[str, str | None]:
     remote_ver = _fetch_remote_version()
     if not remote_ver:
-        return "error", None, None
+        return "error", None
     if _norm_ver(remote_ver) == _norm_ver(APP_VERSION):
-        return "latest", None, remote_ver
-    remote = _fetch_github_script()
-    if not remote:
-        return "error", None, remote_ver
-    got = _parse_app_version(remote.decode("utf-8", errors="ignore"))
-    if not got or _norm_ver(got) == _norm_ver(APP_VERSION):
-        return "latest", None, got or remote_ver
-    return "available", remote, got
+        return "latest", remote_ver
+    return "available", remote_ver
 
 
-def apply_github_update(remote_bytes: bytes, relaunch_interactive: bool = False) -> bool:
-    try:
-        raw = remote_bytes
-        text = raw.decode("utf-8", errors="replace")
-        if not text.lstrip().startswith("#!"):
-            raw = (b"#!/usr/bin/env python3\n" + _normalize_script_bytes(raw))
-        else:
-            raw = text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+def _update_targets() -> list[str]:
+    targets = []
+    seen = set()
 
-        os.makedirs("/usr/local/bin", exist_ok=True)
-        tmp = INSTALL_PATH + ".new"
-        with open(tmp, "wb") as f:
-            f.write(raw)
-        os.chmod(tmp, 0o755)
-        os.replace(tmp, INSTALL_PATH)
+    def _add(p):
+        if not p:
+            return
+        rp = os.path.realpath(p)
+        if rp in seen:
+            return
+        seen.add(rp)
+        targets.append(p)
 
+    _add(INSTALL_PATH)
 
+    if os.path.isfile(INSTALL_PATH):
         try:
-            unit = f"""[Unit]
+            with open(INSTALL_PATH, "rb") as f:
+                head = f.read(240)
+            first = head.split(b"\n", 1)[0].lower()
+            if b"python" not in first:
+                body = head.decode("utf-8", errors="ignore")
+                m = re.search(r"python3?\s+(\S+)", body)
+                if m:
+                    _add(m.group(1).strip("\"'"))
+        except Exception:
+            pass
+
+    _add(os.path.abspath(__file__))
+    return targets
+
+
+def _prepare_script_bytes(data: bytes) -> bytes:
+    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+    if not text.lstrip().startswith("#!"):
+        text = "#!/usr/bin/env python3\n" + text.lstrip("\n")
+    return text.encode("utf-8")
+
+
+def _write_script_atomic(path: str, raw: bytes) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".new"
+    with open(tmp, "wb") as f:
+        f.write(raw)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, path)
+
+
+def _refresh_failover_unit():
+    unit = f"""[Unit]
 Description=T.Sin datacenter failover watcher
 After=network-online.target wg-quick@wg0.service
 Wants=network-online.target
@@ -2402,36 +2464,93 @@ RestartSec=15
 [Install]
 WantedBy=multi-user.target
 """
-            with open(FAILOVER_UNIT_PATH, "w") as f:
-                f.write(unit)
-            subprocess.run(
-                ["systemctl", "daemon-reload"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-            subprocess.run(
-                ["systemctl", "enable", FAILOVER_SERVICE],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-        except Exception:
-            pass
-
-        if relaunch_interactive:
-            if os.path.exists("/dev/tty"):
-                os.execvp("bash", ["bash", "-c", f'exec "{INSTALL_PATH}" </dev/tty >/dev/tty 2>/dev/tty'])
-            os.execvp(sys.executable, [sys.executable, INSTALL_PATH])
-
-        subprocess.Popen(
+    try:
+        with open(FAILOVER_UNIT_PATH, "w") as f:
+            f.write(unit)
+        subprocess.run(
+            ["systemctl", "daemon-reload"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        subprocess.run(
+            ["systemctl", "enable", FAILOVER_SERVICE],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        subprocess.run(
             ["systemctl", "restart", FAILOVER_SERVICE],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            check=False,
         )
-        return True
     except Exception:
+        pass
+
+
+def perform_github_update(expected_ver: str | None = None, relaunch_interactive: bool = False, quiet: bool = False) -> bool:
+    if not quiet:
+        print(f"  {C_CYAN}[~] Downloading T.Sin.py from GitHub...{C_RESET}")
+    data, got_ver = download_github_script()
+    if not data or not got_ver:
+        if not quiet:
+            print(f"  {C_RED}❌ Download failed or file invalid.{C_RESET}")
         return False
+
+    if expected_ver and _norm_ver(got_ver) != _norm_ver(expected_ver):
+        if not quiet:
+            print(f"  {C_RED}❌ Version mismatch after download ({got_ver} != {expected_ver}).{C_RESET}")
+        return False
+
+    if _norm_ver(got_ver) == _norm_ver(APP_VERSION) and not expected_ver:
+        if not quiet:
+            print(f"  {C_GREEN}✓ Already on Ver {APP_VERSION}.{C_RESET}")
+        return False
+
+    raw = _prepare_script_bytes(data)
+    targets = _update_targets()
+    if not quiet:
+        print(f"  {C_CYAN}[~] Installing Ver {got_ver} ({len(raw)} bytes)...{C_RESET}")
+
+    try:
+        for path in targets:
+            _write_script_atomic(path, raw)
+            with open(path, "rb") as f:
+                written = f.read()
+            wver = _parse_app_version(written.decode("utf-8", errors="ignore"))
+            if _norm_ver(wver or "") != _norm_ver(got_ver):
+                if not quiet:
+                    print(f"  {C_RED}❌ Verify failed for {path}{C_RESET}")
+                return False
+            if not quiet:
+                print(f"  {C_GREEN}[+] Wrote {path}{C_RESET}")
+    except Exception as e:
+        if not quiet:
+            print(f"  {C_RED}❌ Write failed: {e}{C_RESET}")
+        return False
+
+    _refresh_failover_unit()
+    if not quiet:
+        print(f"  {C_GREEN}[+] Installed Ver {got_ver} successfully.{C_RESET}")
+
+    if relaunch_interactive:
+        if not quiet:
+            print(f"  {C_CYAN}[~] Relaunching...{C_RESET}\n")
+            time.sleep(0.6)
+        try:
+            if os.path.exists("/dev/tty"):
+                os.execvp(
+                    "bash",
+                    ["bash", "-c", f'exec /usr/bin/python3 "{INSTALL_PATH}" </dev/tty >/dev/tty 2>/dev/tty'],
+                )
+            os.execvp(sys.executable, [sys.executable, INSTALL_PATH])
+        except Exception as e:
+            if not quiet:
+                print(f"  {C_RED}❌ Relaunch failed: {e}{C_RESET}")
+                print(f"  {C_YELLOW}Run manually: T.Sin{C_RESET}")
+            return False
+    return True
 
 
 def _update_check_due() -> bool:
@@ -2459,10 +2578,14 @@ def maybe_auto_update_from_github(force: bool = False) -> bool:
         return False
     _touch_update_stamp()
     try:
-        status, remote, _remote_ver = check_github_version()
-        if status != "available" or not remote:
+        status, remote_ver = check_github_version()
+        if status != "available" or not remote_ver:
             return False
-        return apply_github_update(remote, relaunch_interactive=False)
+        return perform_github_update(
+            expected_ver=remote_ver,
+            relaunch_interactive=False,
+            quiet=True,
+        )
     except Exception:
         return False
 
@@ -2758,7 +2881,7 @@ def menu_update():
     print(f"  {C_WHITE}Local Ver: {APP_VERSION}{C_RESET}")
     print(f"  {C_CYAN}[~] Checking GitHub for new version...{C_RESET}\n")
     try:
-        status, remote, remote_ver = check_github_version()
+        status, remote_ver = check_github_version()
     except Exception as e:
         print(f"  {C_RED}❌ Could not check GitHub: {e}{C_RESET}")
         input("\n  Press Enter to continue...")
@@ -2783,17 +2906,21 @@ def menu_update():
         time.sleep(1.2)
         return
 
-    print(f"\n  {C_CYAN}[~] Installing Ver {remote_ver}...{C_RESET}\n")
+    print()
     try:
-        if apply_github_update(remote, relaunch_interactive=True):
-            return
+        ok = perform_github_update(
+            expected_ver=remote_ver,
+            relaunch_interactive=True,
+            quiet=False,
+        )
     except Exception as e:
         print(f"\n  {C_RED}❌ Update failed: {e}{C_RESET}")
         input("\n  Press Enter to continue...")
         return
 
-    print(f"\n  {C_RED}❌ Update failed while writing the new file.{C_RESET}")
-    input("\n  Press Enter to continue...")
+    if not ok:
+        print(f"\n  {C_RED}❌ Update failed.{C_RESET}")
+        input("\n  Press Enter to continue...")
 
 def menu_uninstall():
     print("\n  \033[91mAre you sure you want to logout from your token?\033[0m")
