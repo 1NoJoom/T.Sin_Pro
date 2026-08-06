@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.2"
 
 try:
     from zoneinfo import ZoneInfo
@@ -1691,7 +1691,7 @@ def install_datacenter_locations(panel_client, panel_name, datacenter_proxies):
         print(f"  {b}├──────┼────────────────────────────────┼──────────┤{x}")
         for i, node in enumerate(unconfigured, 1):
             cname = node.get('name', 'Unknown')
-            if cname == 'Best ping':
+            if cname in ('Best ping', 'Unknown'):
                 loc_col = _ascii_pad("⚡️Best ping⚡️", 30)
             else:
                 iso = get_country_iso(cname)
@@ -1820,7 +1820,7 @@ def remove_datacenter_locations(panel_client, panel_name):
             tag = ib.get("tag", "Unknown")
 
             name = re.sub(r"^[\U0001F1E0-\U0001F1FF\U0001F300-\U0001FAFF]+\s*", "", tag).strip() or tag
-            if name == 'Best ping' or tag == '⚡️ Best ping⚡️':
+            if name in ('Best ping', 'Unknown') or 'Best ping' in tag or 'Unknown' in tag:
                 loc_col = _ascii_pad("⚡️Best ping⚡️", 30)
             else:
                 iso = get_country_iso(name)
@@ -3089,6 +3089,8 @@ def menu_live_status(token):
                 )
                 for idx, (port, p_data) in enumerate(sorted_proxies, 1):
                     c_name_loc = (p_data.get('country', 'Unknown') or 'Unknown')
+                    if c_name_loc == 'Unknown':
+                        c_name_loc = 'Best ping'
                     c_ping = str(p_data.get('ping_ms', '?')) + "ms"
                     try:
                         dc_ping_val = float(str(dc_ping).replace('ms', ''))
