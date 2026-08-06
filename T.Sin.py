@@ -1344,17 +1344,17 @@ def x3ui_execute_deletion(api: ThreeXUIClient, selected_countries: list):
         cname = country.get('name', '')
         if cname == '⚡️Best ping⚡️' or cname in ('Best ping', 'Unknown'):
             inbound_tag = '⚡️Best ping⚡️'
-            outbound_tag = 'Datacenter-Best ping'
+            outbound_tags = ['Datacenter-Best ping', 'Datacenter-Unknown']
         else:
             inbound_tag = f"{flag} {cname}"
-            outbound_tag = f"Datacenter-{cname}"
+            outbound_tags = [f"Datacenter-{cname}"]
 
         for ib in inbounds:
             if ib.get("port") == in_port or ib.get("remark") == inbound_tag:
                 api.delete_inbound(ib.get("id"))
 
-        outbounds[:] = [ob for ob in outbounds if ob.get("tag") != outbound_tag]
-        rules[:] = [r for r in rules if inbound_tag not in r.get("inboundTag", []) and r.get("outboundTag") != outbound_tag]
+        outbounds[:] = [ob for ob in outbounds if ob.get("tag") not in outbound_tags]
+        rules[:] = [r for r in rules if inbound_tag not in r.get("inboundTag", []) and r.get("outboundTag") not in outbound_tags]
         
         removed += 1
         print(f"  {C_GREEN}✔ Removed:{C_RESET} {inbound_tag}")
