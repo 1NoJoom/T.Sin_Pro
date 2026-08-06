@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 
 try:
     from zoneinfo import ZoneInfo
@@ -1082,7 +1082,7 @@ def x3ui_clone_countries_batch(api: ThreeXUIClient, source_inbound: dict, countr
         flag = country.get('flag', '🌐')
         if country['name'] in ('Best ping', 'Unknown'):
             inbound_tag = '⚡️Best ping⚡️'
-            outbound_tag = 'Datacenter-Best ping'
+            outbound_tag = 'Datacenter-best_ping'
         else:
             inbound_tag = f"{flag} {country['name']}"
             outbound_tag = f"Datacenter-{country['name']}"
@@ -1344,7 +1344,7 @@ def x3ui_execute_deletion(api: ThreeXUIClient, selected_countries: list):
         cname = country.get('name', '')
         if cname == '⚡️Best ping⚡️' or cname in ('Best ping', 'Unknown'):
             inbound_tag = '⚡️Best ping⚡️'
-            outbound_tags = None
+            outbound_tags = ['Datacenter-best_ping', 'Datacenter-Best ping', 'Datacenter-Unknown', 'Datacenter-⚡️Best ping⚡️']
         else:
             inbound_tag = f"{flag} {cname}"
             outbound_tags = [f"Datacenter-{cname}"]
@@ -1353,12 +1353,8 @@ def x3ui_execute_deletion(api: ThreeXUIClient, selected_countries: list):
             if ib.get("port") == in_port or ib.get("remark") == inbound_tag:
                 api.delete_inbound(ib.get("id"))
 
-        if outbound_tags is None:
-            outbounds[:] = [ob for ob in outbounds if 'Best ping' not in ob.get("tag", "") and 'Unknown' not in ob.get("tag", "")]
-            rules[:] = [r for r in rules if inbound_tag not in r.get("inboundTag", []) and 'Best ping' not in r.get("outboundTag", "") and 'Unknown' not in r.get("outboundTag", "")]
-        else:
-            outbounds[:] = [ob for ob in outbounds if ob.get("tag") not in outbound_tags]
-            rules[:] = [r for r in rules if inbound_tag not in r.get("inboundTag", []) and r.get("outboundTag") not in outbound_tags]
+        outbounds[:] = [ob for ob in outbounds if ob.get("tag") not in outbound_tags]
+        rules[:] = [r for r in rules if inbound_tag not in r.get("inboundTag", []) and r.get("outboundTag") not in outbound_tags]
         
         removed += 1
         print(f"  {C_GREEN}✔ Removed:{C_RESET} {inbound_tag}")
