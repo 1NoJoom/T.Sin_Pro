@@ -1017,10 +1017,11 @@ def pg_show_inbounds(inbounds, title="Select Inbound to Clone From"):
     print(f"  {b}╰──────────────────────────────────────────────────────────────────────────╯{x}\n")
 
 def _pg_country_tag(country: dict):
-    if country.get('name') in ('Best ping', 'Unknown'):
-        return '⚡️Best ping⚡️'
-    flag = country.get('flag') or get_country_flag(country.get('name', ''))
-    return f"{flag} {country['name']}"
+    name = country.get('name', '')
+    if name == '⚡️Best ping⚡️' or name in ('Best ping', 'Unknown'):
+        return '[XX] Best ping'
+    flag = country.get('flag') or get_country_flag(name)
+    return f"{flag} {name}"
 
 def _pg_apply_inbound_outbound(config: dict, source_inbound: dict, country: dict):
     inbound_tag = _pg_country_tag(country)
@@ -1205,7 +1206,14 @@ def pg_clone_countries_batch(api: PasarGuardAPI, source_inbound: dict,
     success = 0
     for country, expected_tag in prepared:
         actual_tag = _pg_resolve_inbound_tag(config, country) or expected_tag
-        payload    = _pg_sanitize_host_payload(source_host, actual_tag, actual_tag)
+        
+        cname = country.get('name', '')
+        if cname == '⚡️Best ping⚡️' or cname in ('Best ping', 'Unknown'):
+            host_remark = '⚡️Best ping⚡️'
+        else:
+            host_remark = actual_tag
+            
+        payload    = _pg_sanitize_host_payload(source_host, actual_tag, host_remark)
 
         ok, err = False, None
         for attempt in range(3):
@@ -1217,8 +1225,14 @@ def pg_clone_countries_batch(api: PasarGuardAPI, source_inbound: dict,
                 time.sleep(5)
                 config = api.get_core_config() or config
                 actual_tag = _pg_resolve_inbound_tag(config, country) or actual_tag
+                
+                if cname == '⚡️Best ping⚡️' or cname in ('Best ping', 'Unknown'):
+                    host_remark = '⚡️Best ping⚡️'
+                else:
+                    host_remark = actual_tag
+                    
                 payload["inbound_tag"] = actual_tag
-                payload["remark"]      = actual_tag
+                payload["remark"]      = host_remark
                 continue
             break
 
@@ -1327,8 +1341,13 @@ def x3ui_execute_deletion(api: ThreeXUIClient, selected_countries: list):
     for country in selected_countries:
         in_port = country.get('in_port')
         flag = country.get('flag', '🌐')
-        inbound_tag = f"{flag} {country['name']}"
-        outbound_tag = f"Datacenter-{country['name']}"
+        cname = country.get('name', '')
+        if cname == '⚡️Best ping⚡️' or cname in ('Best ping', 'Unknown'):
+            inbound_tag = '⚡️Best ping⚡️'
+            outbound_tag = 'Datacenter-Best ping'
+        else:
+            inbound_tag = f"{flag} {cname}"
+            outbound_tag = f"Datacenter-{cname}"
 
         for ib in inbounds:
             if ib.get("port") == in_port or ib.get("remark") == inbound_tag:
@@ -1497,6 +1516,10 @@ def _pg_match_tags_for_countries(countries: list):
     for c in countries:
         tags.add(_pg_country_tag(c))
         tags.add(c['name'])
+        cname = c.get('name', '')
+        if cname == '⚡️Best ping⚡️' or cname in ('Best ping', 'Unknown'):
+            tags.add('⚡️Best ping⚡️')
+            tags.add('[XX] Best ping')
     return tags
 
 def _pg_sanitize_host_payload(source_host: dict, inbound_tag: str, remark: str):
