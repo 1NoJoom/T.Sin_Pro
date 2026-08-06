@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.2"
 
 try:
     from zoneinfo import ZoneInfo
@@ -1818,6 +1818,9 @@ def remove_datacenter_locations(panel_client, panel_name):
                         dc_tags.add(ob.get("tag"))
             
             dc_country_names = [tag.replace("Datacenter-", "") for tag in dc_tags if tag.startswith("Datacenter-")]
+            if 'best_ping' in dc_country_names or 'Unknown' in dc_country_names:
+                dc_country_names.append('Best ping')
+                
             for ib in inbounds:
                 remark = ib.get("remark", "")
 
