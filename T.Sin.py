@@ -1017,6 +1017,8 @@ def pg_show_inbounds(inbounds, title="Select Inbound to Clone From"):
     print(f"  {b}╰──────────────────────────────────────────────────────────────────────────╯{x}\n")
 
 def _pg_country_tag(country: dict):
+    if country.get('name') == 'Best ping':
+        return '⚡️Best ping⚡️'
     flag = country.get('flag') or get_country_flag(country.get('name', ''))
     return f"{flag} {country['name']}"
 
@@ -1077,8 +1079,12 @@ def x3ui_clone_countries_batch(api: ThreeXUIClient, source_inbound: dict, countr
     created = 0
     for country in countries:
         flag = country.get('flag', '🌐')
-        inbound_tag = f"{flag} {country['name']}"
-        outbound_tag = f"Datacenter-{country['name']}"
+        if country['name'] == 'Best ping':
+            inbound_tag = '⚡️Best ping⚡️'
+            outbound_tag = 'Datacenter-Best ping'
+        else:
+            inbound_tag = f"{flag} {country['name']}"
+            outbound_tag = f"Datacenter-{country['name']}"
 
         outbounds[:] = [ob for ob in outbounds if ob.get("tag") != outbound_tag]
         rules[:] = [r for r in rules if inbound_tag not in r.get("inboundTag", []) and r.get("outboundTag") != outbound_tag]
@@ -1685,9 +1691,11 @@ def install_datacenter_locations(panel_client, panel_name, datacenter_proxies):
         print(f"  {b}├──────┼────────────────────────────────┼──────────┤{x}")
         for i, node in enumerate(unconfigured, 1):
             cname = node.get('name', 'Unknown')
-            iso = get_country_iso(cname)
- 
-            loc_col = _ascii_pad(f"[{iso}] {cname}", 30)
+            if cname == 'Best ping':
+                loc_col = _ascii_pad("⚡️Best ping⚡️", 30)
+            else:
+                iso = get_country_iso(cname)
+                loc_col = _ascii_pad(f"[{iso}] {cname}", 30)
             port_col = f"{node['out_port']:<8}"
             print(f"  {b}│{x} \033[93m[{i:02d}]\033[0m {b}│{x} {t}{loc_col}{x} {b}│{x} \033[96m{port_col}\033[0m {b}│{x}")
         print(f"  {b}├──────┴────────────────────────────────┴──────────┤{x}")
@@ -1812,8 +1820,11 @@ def remove_datacenter_locations(panel_client, panel_name):
             tag = ib.get("tag", "Unknown")
 
             name = re.sub(r"^[\U0001F1E0-\U0001F1FF\U0001F300-\U0001FAFF]+\s*", "", tag).strip() or tag
-            iso = get_country_iso(name)
-            loc_col = _ascii_pad(f"[{iso}] {name}", 30)
+            if name == 'Best ping' or tag == '⚡️ Best ping⚡️':
+                loc_col = _ascii_pad("⚡️Best ping⚡️", 30)
+            else:
+                iso = get_country_iso(name)
+                loc_col = _ascii_pad(f"[{iso}] {name}", 30)
             port_col = f"{ib.get('port', 0):<8}"
             print(f"  {b}│{x} \033[91m[{idx:02d}]\033[0m {b}│{x} {t}{loc_col}{x} {b}│{x} \033[96m{port_col}\033[0m {b}│{x}")
         print(f"  {b}├──────┴────────────────────────────────┴──────────┤{x}")
