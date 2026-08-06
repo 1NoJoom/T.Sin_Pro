@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.2"
 
 try:
     from zoneinfo import ZoneInfo
@@ -1344,7 +1344,7 @@ def x3ui_execute_deletion(api: ThreeXUIClient, selected_countries: list):
         cname = country.get('name', '')
         if cname == '⚡️Best ping⚡️' or cname in ('Best ping', 'Unknown'):
             inbound_tag = '⚡️Best ping⚡️'
-            outbound_tags = ['Datacenter-Best ping', 'Datacenter-Unknown']
+            outbound_tags = None
         else:
             inbound_tag = f"{flag} {cname}"
             outbound_tags = [f"Datacenter-{cname}"]
@@ -1353,8 +1353,12 @@ def x3ui_execute_deletion(api: ThreeXUIClient, selected_countries: list):
             if ib.get("port") == in_port or ib.get("remark") == inbound_tag:
                 api.delete_inbound(ib.get("id"))
 
-        outbounds[:] = [ob for ob in outbounds if ob.get("tag") not in outbound_tags]
-        rules[:] = [r for r in rules if inbound_tag not in r.get("inboundTag", []) and r.get("outboundTag") not in outbound_tags]
+        if outbound_tags is None:
+            outbounds[:] = [ob for ob in outbounds if 'Best ping' not in ob.get("tag", "") and 'Unknown' not in ob.get("tag", "")]
+            rules[:] = [r for r in rules if inbound_tag not in r.get("inboundTag", []) and 'Best ping' not in r.get("outboundTag", "") and 'Unknown' not in r.get("outboundTag", "")]
+        else:
+            outbounds[:] = [ob for ob in outbounds if ob.get("tag") not in outbound_tags]
+            rules[:] = [r for r in rules if inbound_tag not in r.get("inboundTag", []) and r.get("outboundTag") not in outbound_tags]
         
         removed += 1
         print(f"  {C_GREEN}✔ Removed:{C_RESET} {inbound_tag}")
