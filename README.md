@@ -216,6 +216,6 @@ T.Sin
 
 **T.Sin Pro** — Built for performance. Made for pros.
 
-`Version 1.0.0` · `@T_Sinn`
+`Version 1.1.0` · `@T_Sinn`
 
 </div>
