@@ -1,5 +1,5 @@
 # Sin Kabir on the Fucking T.Sin Pro Ver...
-# T.Sin Pro — v1.0.2
+# T.Sin Pro — v1.1.0
 # Tel: @T_Sinn
 
 import time
@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.1.0"
 
 try:
     from zoneinfo import ZoneInfo
@@ -1699,6 +1699,8 @@ def install_datacenter_locations(panel_client, panel_name, datacenter_proxies):
         })
         used_ports.add(current_assign_port)
         
+    unconfigured.sort(key=lambda x: x['out_port'])
+        
     if not unconfigured:
         print(f"{C_GREEN}🎉 All active Datacenter locations are already installed!{C_RESET}")
         input(f"\nPress {C_BOLD}{C_WHITE}[Enter]{C_RESET} to return...")
@@ -1877,15 +1879,22 @@ def remove_datacenter_locations(panel_client, panel_name):
         sel_countries = []
         for ib in sel_inbounds:
             tag = ib.get("tag", "")
-            parts = tag.split(" ", 1)
-            flag = parts[0] if len(parts) > 1 else "🌐"
-            name = parts[1] if len(parts) > 1 else tag
-            
-            sel_countries.append({
-                "name": tag.replace(flag + " ", ""),
-                "in_port": ib.get("port"),
-                "flag": flag
-            })
+            if 'Best ping' in tag or 'Unknown' in tag:
+                sel_countries.append({
+                    "name": "Best ping",
+                    "in_port": ib.get("port"),
+                    "flag": "⚡️"
+                })
+            else:
+                parts = tag.split(" ", 1)
+                flag = parts[0] if len(parts) > 1 else "🌐"
+                name = parts[1] if len(parts) > 1 else tag
+                
+                sel_countries.append({
+                    "name": tag.replace(flag + " ", ""),
+                    "in_port": ib.get("port"),
+                    "flag": flag
+                })
             
         if panel_name == "Pasargad":
             removed = pg_execute_deletion(panel_client, sel_countries)
