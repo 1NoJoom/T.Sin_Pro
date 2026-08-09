@@ -1,5 +1,5 @@
 # Sin Kabir on the Fucking T.Sin Pro Ver...
-# T.Sin Pro — v1.1.2
+# T.Sin Pro — v1.1.3
 # Tel: @T_Sinn
 
 import time
@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.1.2
+APP_VERSION = "1.1.3"
 
 try:
     from zoneinfo import ZoneInfo
