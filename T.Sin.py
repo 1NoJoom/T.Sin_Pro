@@ -1,5 +1,5 @@
 # Sin Kabir on the Fucking T.Sin Pro Ver...
-# T.Sin Pro — v1.1.0
+# T.Sin Pro — v1.1.1
 # Tel: @T_Sinn
 
 import time
@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 try:
     from zoneinfo import ZoneInfo
@@ -2284,8 +2284,8 @@ def ensure_datacenter_connection(token, quiet=False):
                 "systemctl is-active --quiet wg-quick@wg0", shell=True
             ).returncode == 0
 
-            hs_age = _wg_handshake_age_sec()
             tunnel_ok = _tunnel_to_dc_ok()
+            hs_age = _wg_handshake_age_sec()
             handshake_fresh = hs_age is not None and hs_age < 180
 
             if wg_up and tunnel_ok and handshake_fresh:
