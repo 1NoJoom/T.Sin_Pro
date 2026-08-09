@@ -5,10 +5,10 @@
 ### نسخه حرفه‌ای مدیریت نود — سریع، پایدار، اختصاصی
 
 <p dir="ltr" align="center">
-  <img height="50" src="https://img.shields.io/badge/Version-v1.1.1-2CA5E0?style=for-the-badge" alt="Version" />&nbsp;
-  <img height="50" src="https://img.shields.io/badge/OS-Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white" alt="Ubuntu" />&nbsp;
-  <img height="50" src="https://img.shields.io/badge/Language-Python_3-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3" />&nbsp;
-  <img height="50" src="https://img.shields.io/badge/Edition-PRO-FFD700?style=for-the-badge" alt="PRO" />
+  <img src="https://img.shields.io/badge/Version-v1.1.1-006400?style=for-the-badge" alt="Version" />&nbsp;
+  <img src="https://img.shields.io/badge/OS-Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white" alt="Ubuntu" />&nbsp;
+  <img src="https://img.shields.io/badge/Language-Python_3-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3" />&nbsp;
+  <img src="https://img.shields.io/badge/Edition-PRO-FFD700?style=for-the-badge" alt="PRO" />
 </p>
 
 <br/>
