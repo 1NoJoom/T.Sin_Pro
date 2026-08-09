@@ -4,8 +4,11 @@
 
 ### نسخه حرفه‌ای مدیریت نود — سریع، پایدار، اختصاصی
 
-<p align="center">
-  <img src="assets/badges.png" alt="Pro v1.0.0 · Ubuntu · Python 3 · PRO" />
+<p dir="ltr" align="center">
+  <img src="https://img.shields.io/badge/Version-v1.1.1-2CA5E0?style=for-the-badge" alt="Version" />&nbsp;
+  <img src="https://img.shields.io/badge/OS-Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white" alt="Ubuntu" />&nbsp;
+  <img src="https://img.shields.io/badge/Language-Python_3-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3" />&nbsp;
+  <img src="https://img.shields.io/badge/Edition-PRO-8A2BE2?style=for-the-badge" alt="PRO" />
 </p>
 
 <br/>
@@ -177,8 +180,11 @@ T.Sin
 
 </div>
 
-<p align="center">
-  <img src="assets/contacts.png" alt="Channel · Bot · Support · YouTube" />
+<p dir="ltr" align="center">
+  <a href="https://t.me/T_Sinn"><img src="https://img.shields.io/badge/Channel-T__Sinn-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram Channel" /></a>&nbsp;
+  <a href="https://t.me/T_Sin_bot"><img src="https://img.shields.io/badge/Bot-T__Sin__bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram Bot" /></a>&nbsp;
+  <a href="https://t.me/T_sin_support"><img src="https://img.shields.io/badge/Support-T__sin__support-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Support" /></a>&nbsp;
+  <a href="https://www.youtube.com/@Sin_cz"><img src="https://img.shields.io/badge/YouTube-Sin__cz-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube" /></a>
 </p>
 
 <br/>
