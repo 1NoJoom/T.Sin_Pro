@@ -1,5 +1,5 @@
 # Sin Kabir on the Fucking T.Sin Pro Ver...
-# T.Sin Pro — v1.1.1
+# T.Sin Pro — v1.1.2
 # Tel: @T_Sinn
 
 import time
@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2
 
 try:
     from zoneinfo import ZoneInfo
@@ -2890,7 +2890,10 @@ def menu_install(token=None, prefer_dc=None, quiet=False, preserve_token_on_fail
                 print(f"\033[93m   Reason: {last_error}\033[0m\n")
 
             if not prefer_dc and not preserve_token_on_fail:
-                delete_token()
+                err_str = str(last_error).lower()
+                auth_failed = "invalid token" in err_str or "not found" in err_str or "unauthorized" in err_str or "in use" in err_str
+                if auth_failed:
+                    delete_token()
             input("Press Enter to continue...")
         return False
         
@@ -3336,16 +3339,19 @@ def main():
                 data = api_request("/status", token) if token else {"error": "no token"}
 
         if not ok or "error" in data:
-
-            delete_token()
-            if os.path.exists(DC_FILE):
-                try:
-                    os.remove(DC_FILE)
-                except Exception:
-                    pass
-            _run("systemctl stop wg-quick@wg0", check=False)
-            token = None
-            continue
+            err_str = str(data.get("error", "")).lower()
+            auth_failed = "invalid token" in err_str or "not found" in err_str or "unauthorized" in err_str or "in use" in err_str
+            
+            if auth_failed:
+                delete_token()
+                if os.path.exists(DC_FILE):
+                    try:
+                        os.remove(DC_FILE)
+                    except Exception:
+                        pass
+                _run("systemctl stop wg-quick@wg0", check=False)
+                token = None
+                continue
 
         token = get_saved_token()
         if not token:
