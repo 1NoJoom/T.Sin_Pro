@@ -5,7 +5,7 @@
 ### نسخه حرفه‌ای مدیریت نود — سریع، پایدار، اختصاصی
 
 <p dir="ltr" align="center">
-  <img src="https://img.shields.io/badge/Version-v1.1.1-006400?style=for-the-badge" alt="Version" />&nbsp;
+  <img src="https://img.shields.io/badge/Version-v1.1.3-006400?style=for-the-badge" alt="Version" />&nbsp;
   <img src="https://img.shields.io/badge/OS-Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white" alt="Ubuntu" />&nbsp;
   <img src="https://img.shields.io/badge/Language-Python_3-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3" />&nbsp;
   <img src="https://img.shields.io/badge/Edition-PRO-FFD700?style=for-the-badge" alt="PRO" />
@@ -222,6 +222,6 @@ T.Sin
 
 **T.Sin Pro** — Built for performance. Made for pros.
 
-`Version 1.1.1` · `@T_Sinn`
+`Version 1.1.3` · `@T_Sinn`
 
 </div>
